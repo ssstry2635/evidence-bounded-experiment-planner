@@ -1,0 +1,22 @@
+{
+  "case_id": "experiment-planning-demo",
+  "sources": [{"id": "example", "locator": "Hypothetical interface only; no scientific claim"}],
+  "constants": {"groups": 4, "unit_cost": 12, "pack_size": 10, "budget": 400, "stock": 5},
+  "derived": [
+    {"name": "samples", "expr": "groups * n", "evidence": ["example"]},
+    {"name": "packs", "expr": "ceil(max(0, samples - stock) / pack_size)", "evidence": ["example"]},
+    {"name": "cost", "expr": "packs * pack_size * unit_cost", "evidence": ["example"]},
+    {"name": "duration", "expr": "ceil(samples / 8) * dwell", "evidence": ["example"]}
+  ],
+  "constraints": [
+    {"id": "independent_replication", "lhs": "n", "op": ">=", "rhs": "3", "evidence": ["example"]},
+    {"id": "budget", "lhs": "cost", "op": "<=", "rhs": "budget", "evidence": ["example"]},
+    {"id": "time", "lhs": "duration", "op": "<=", "rhs": "8", "evidence": ["example"]}
+  ],
+  "objectives": [{"expr": "cost", "direction": "min", "evidence": ["example"]}, {"expr": "duration", "direction": "min", "evidence": ["example"]}],
+  "candidates": [
+    {"id": "A", "version": "v1", "domains": {"n": [2], "dwell": [2]}, "evidence": ["example"]},
+    {"id": "B", "version": "v1", "domains": {"n": [3,4,5], "dwell": [2,3]}, "evidence": ["example"]},
+    {"id": "C", "version": "v1", "domains": {"n": [8], "dwell": [4]}, "evidence": ["example"]}
+  ]
+}

@@ -1,0 +1,29 @@
+# Evidence and design decisions
+
+## Evidence ledger
+
+For each source record `source_id`, actual relative path, SHA-256 where possible, version/date, source type, page/section/table/row locator, a short exact excerpt, extracted value, unit, conditions, and extraction uncertainty. For a calculation record the expression, input evidence IDs, result and rounding rule. Link every plan parameter and hard constraint to ledger IDs. Record a proposed assumption as `assumption`, never `source_fact`. Missing equipment model or price stays unknown; a capability class may be proposed with minimum specifications, subject to availability confirmation.
+
+Read the full relevant methods and supplements before interpreting a figure caption. For microscopy, chemistry, cell work or materials synthesis, details such as substrate, sample pretreatment, atmosphere, calibration, instrument resolution and batch are potential confounders. Never transfer a parameter between different compositions or instruments without stating the compatibility assumption. When values conflict, compare experimental context and document the controlling version. The task's explicit constraints control the prospective scenario; the paper controls what it actually measured. Neither overrides safety limits from an authoritative equipment/protocol source.
+
+## Six connected design elements
+
+Translate the objective into a falsifiable comparison, primary endpoint, unit, time point, measurement method and predefined success/failure threshold. Identify independent variables, dependent variables, nuisance/confounder variables and their operational definitions. Distinguish screening/optimization from confirmatory testing. A paper's effect size does not prove the same result will recur.
+
+For every control specify composition/treatment, the confounder it excludes, expected diagnostic behavior and the action if that behavior fails. Use blank, vehicle, negative, positive/reference, sham, calibration and dose controls only when scientifically relevant. If a positive control cannot be supplied, record the lost diagnostic ability and a justified alternative or a block. Avoid mechanically adding controls that change the scientific question or waste a limited sample.
+
+State the experimental unit and distinguish independent specimens/biological replicates from repeated readings or aliquots. Randomize treatment assignment and acquisition order; block by batch/day/operator where relevant; blind interpretation when possible. Set exclusion and missingness rules before results, retain failed samples, and specify whether replacements consume inventory/time. Do not call technical repetitions independent n. Use the original sample threshold; a power calculation needs a stated effect, variability, alpha, test and target power. Without those inputs describe a pilot and its limits instead of asserting a powered result. Repeated peeking and stopping after significance are not default optimization strategies.
+
+Bind each step to prerequisites, material IDs/specifications, quantities and units, instrument model or minimum capability, settings with supported ranges, active and passive durations, responsible capacity, output and quality gate. Include setup, warmup, cleaning, calibration, processing, cooling, analysis and permitted reruns. Separate hands-on effort, equipment occupancy and wall-clock elapsed time. State which activities can actually overlap.
+
+Build sample counts from treatment groups × independent units × technical readings, with controls counted explicitly. Apply reagent losses and reserve only when specified or label the assumption. Compute per-batch consumption, purchase pack ceilings, stocks, shipping/setup/booking charges and unit conversions from the supplied contract. Show both resources consumed and money newly spent; available stock and purchase requirements differ. Do not sum durations as elapsed time when tasks run in parallel, or use a critical path that ignores a shared machine.
+
+For every key setting state allowed finite values or interval, unit, measurement precision, evidence and out-of-range handling. Equipment capability, validated protocol range and project-defined domain are separate restrictions; take their justified intersection. If the intersection is empty, identify the conflicting constraints. Changing units does not permit changing physical quantities. Scale-up may violate heat/mass transfer assumptions even if nominal concentrations match.
+
+## Risk, uncertainty and revisions
+
+Each relevant risk record includes failure mode, observable trigger with unit, consequence, detection step, prevention, stop/hold rule, corrective action, permitted retry count, resource impact and owner/confirmation need. Address actual case risks such as contamination, background, drift, saturation, weak signal, unstable specimens, low inventory or unavailable equipment. Never invent a safety threshold; cite the actual manual/protocol, otherwise request qualified confirmation and hold the affected operation. Never bypass a safety/ethics prerequisite to meet a deadline.
+
+Separate scientific uncertainty, extraction uncertainty, resource availability and scenario assumptions. A plan can be arithmetically feasible while awaiting scientific or operational confirmation. Distinguish an experimentally completed validation from an executable prospective plan.
+
+For each candidate preserve input ID/version and source file. Compare each hard constraint with computed value, limit, unit, pass/fail/unknown, numerical slack and source. Rank feasible candidates using explicit project-defined objectives and tie rules. Keep a Pareto set if preferences are underdetermined. Revision logs must connect original version → revised version, changed fields, old/new values, reason and source, downstream count/cost/timing changes and revalidation result. Do not merely rename the candidate you prefer.
