@@ -24,4 +24,5 @@ jobs:
       - name: Run documented examples
         run: |
           python scripts/verify_plan.py solve examples/model.json --out output/search
+          python scripts/verify_plan.py compare examples/model.json --out output/comparison
           python scripts/verify_plan.py schedule examples/schedule.json --out output/schedule-audit.json

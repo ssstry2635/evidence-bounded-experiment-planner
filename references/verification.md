@@ -12,6 +12,14 @@ Every grid point is evaluated against every hard constraint. `evaluations.csv` r
 
 Before using a result, recompute a chosen point directly from primitives. Check a bound, unit conversion, an integer ceiling discontinuity, zero-purchase stock case, control counts, time/resource overlap and a deliberately infeasible input. Do not add regression comparisons against invented scientific truths. For a large search or uncertain constants, explicitly declare the remaining uncertainty instead of reporting an exact global optimum.
 
+## `compare model.json --out DIRECTORY`
+
+Use the same model as `solve` and add a `baseline` mapping to every candidate. Its keys must match that candidate's domain variables. Supply the original values even if they lie outside allowed domains. Optional constraint `unit` labels appear alongside the actual operands, relation, signed margin and evidence IDs in the report. A zero margin can fail a strict inequality or a not-equal constraint, so use the returned `passed` flag.
+
+The report adds `as_written`, `changes`, `derived_changes` and, for infeasible candidates, `infeasibility_witness`. Revisions minimize the number of changed parameters per candidate before applying the declared objectives. The top-level best compares the resulting per-candidate revisions by those objectives. Ties use the first enumerated point and retain counts. Use `solve` if the project requires optimizing objectives ahead of change count, or retain all feasible points from the CSV if another selection rule is required.
+
+An infeasibility witness is a concrete tested point with the fewest failed constraints, breaking ties by changed field count then enumeration order. It illustrates the conflicts. The enumerated counts establish feasibility only over the supplied domains and constraints. Undefined baseline arithmetic is recorded and can coexist with valid revised points. Undefined arithmetic inside the allowed search space aborts the run, since complete verification then requires a corrected domain or model.
+
 ## `schedule schedule.json --out FILE`
 
 Input keys: `case_id`, `time_unit` (nonempty), `resources` mapping resource ID to `{capacity, windows:[[start,end],...]}`, `steps` list of `{id,start,end,after:[],demands:{resource_id:quantity}}`, optional `deadline`. All times use the named unit relative to a specified origin in the case report; all intervals are half-open `[start,end)`. Capacities and demands are positive integers. A step's duration must be positive. Each use must fit inside a single resource availability window. Split multi-stage operations when capacities change. Use separate steps for setup and cleanup if these occupy a resource. An empty `windows` list represents unavailable equipment. Represent maintenance by splitting availability windows, rather than accepting an overlap with a blackout.

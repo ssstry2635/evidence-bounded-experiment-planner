@@ -10,9 +10,10 @@ import operator
 import re
 from collections import Counter
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR, localcontext
+from functools import lru_cache
 from pathlib import Path
 
-VERSION = '1.0.0'
+VERSION = '1.1.0'
 NAME = re.compile(r'^[A-Za-z][A-Za-z0-9_]*$')
 FUNCTIONS = {'ceil', 'floor', 'abs', 'min', 'max'}
 RELATIONS = {'<=': operator.le, '<': operator.lt, '>=': operator.ge,
@@ -63,14 +64,23 @@ def identifier(value):
     return value
 
 
-def expression(text, context):
+@lru_cache(maxsize=512)
+def parse_expression(text):
     require(isinstance(text, str) and 0 < len(text) <= 4096, 'Invalid expression length')
     tree = ast.parse(text, mode='eval')
     require(sum(1 for _ in ast.walk(tree)) <= 256, 'Expression too complex')
+    literals = {node: ast.get_source_segment(text, node) for node in ast.walk(tree)
+                if isinstance(node, ast.Constant) and type(node.value) in (int, float)}
+    return tree, literals
+
+
+def expression(text, context):
+    require(isinstance(text, str), 'Expected an expression string')
+    tree, literals = parse_expression(text)
 
     def visit(node):
         if isinstance(node, ast.Constant) and type(node.value) in (int, float):
-            return number(ast.get_source_segment(text, node))
+            return number(literals[node])
         if isinstance(node, ast.Name):
             require(node.id in context, f'Unknown variable: {node.id}')
             return context[node.id]
@@ -103,7 +113,32 @@ def evidence(item, known):
             'Missing or unresolved evidence IDs')
 
 
-def solve(model, out):
+def assess(candidate, params, constants, derived, constraints, objectives):
+    context = dict(constants, **params)
+    calculated = {}
+    for entry in derived:
+        value = expression(entry['expr'], context)
+        context[entry['name']] = calculated[entry['name']] = value
+    checks = []
+    for entry in constraints:
+        lhs = expression(entry['lhs'], context)
+        rhs = expression(entry['rhs'], context)
+        op = entry['op']
+        if op in ('<=', '<'):
+            margin = rhs - lhs
+        elif op in ('>=', '>'):
+            margin = lhs - rhs
+        else:
+            margin = abs(lhs - rhs) * (-1 if op == '==' else 1)
+        checks.append({'id': entry['id'], 'lhs': lhs, 'rhs': rhs, 'op': op,
+                       'passed': RELATIONS[op](lhs, rhs), 'signed_margin': margin,
+                       'evidence': entry['evidence'], 'unit': entry.get('unit')})
+    return {'candidate_id': candidate['id'], 'version': candidate['version'],
+            'parameters': params, 'derived': calculated, 'constraint_checks': checks,
+            'objectives': [expression(entry['expr'], context) for entry in objectives]}
+
+
+def solve(model, out, *, compare=False):
     require(isinstance(model.get('case_id'), str) and model['case_id'], 'case_id required')
     sources = model.get('sources', [])
     require(isinstance(sources, list) and sources, 'sources required')
@@ -146,7 +181,13 @@ def solve(model, out):
             require(len(set(vals)) == len(vals), 'Duplicate domain value')
             values.append(vals)
         total += math.prod(len(x) for x in values)
-        prepared.append((c, names, values))
+        baseline = None
+        if compare:
+            original = c.get('baseline')
+            require(isinstance(original, dict) and set(original) == set(names),
+                    f"Candidate {c['id']}: baseline must specify every domain variable exactly once")
+            baseline = {name: number(original[name]) for name in names}
+        prepared.append((c, names, values, baseline))
     limit = integer(model.get('max_points', 100000), 'max_points')
     require(limit <= 1000000 and total <= limit, f'Search limit exceeded: {total} points; no feasibility conclusion')
     derived_names = [identifier(x['name']) for x in derived]
@@ -160,55 +201,85 @@ def solve(model, out):
               'scope': 'Declared numeric model only; source semantics and unit consistency require review',
               'status': 'completed', 'complete_enumeration': True, 'evaluated': total,
               'objectives': objectives, 'candidates': [], 'best': None, 'global_ties': 0}
+    if compare:
+        report.update(mode='compare', sources=sources,
+                      selection_rule='Rank each candidate’s feasible revisions by changed field count, then declared objectives. Compare those revisions by declared objectives.')
     global_key = None
     fields = ['candidate_id', 'version'] + domain_names + derived_names + [f'objective_{i+1}' for i in range(len(objectives))] + ['feasible', 'failed_constraints']
     with (out / 'evaluations.csv').open('w', newline='', encoding='utf-8') as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
-        for candidate, names, values in prepared:
+        for candidate, names, values, baseline in prepared:
             failures = Counter()
             item = {'id': candidate['id'], 'version': candidate['version'], 'evaluated': 0,
                     'feasible_count': 0, 'best': None, 'ties': 0}
             best_key = None
+            witness_key = None
+            if compare:
+                outside = [name for name, allowed in zip(names, values) if baseline[name] not in allowed]
+                try:
+                    original = assess(candidate, baseline, constants, derived, constraints, objectives)
+                except ArithmeticError as exc:
+                    # An invalid as-written operating point need not preclude a
+                    # valid revision in the declared domain.
+                    original = {'parameters': baseline, 'derived': {}, 'constraint_checks': [],
+                                'evaluation_error': type(exc).__name__}
+                original['outside_allowed_domains'] = outside
+                original['feasible'] = ('evaluation_error' not in original and not outside
+                                        and all(c['passed'] for c in original['constraint_checks']))
+                item.update(as_written=original, changes=[], infeasibility_witness=None)
             for point in itertools.product(*values):
                 params = dict(zip(names, point))
-                ctx = dict(constants, **params)
-                for d in derived:
-                    ctx[d['name']] = expression(d['expr'], ctx)
-                checks = [{'id': c['id'], 'lhs': expression(c['lhs'], ctx),
-                           'rhs': expression(c['rhs'], ctx), 'op': c['op']} for c in constraints]
-                for check in checks:
-                    check['passed'] = RELATIONS[check['op']](check['lhs'], check['rhs'])
-                    check['signed_margin'] = (check['rhs'] - check['lhs'] if check['op'] in ('<=', '<')
-                                              else check['lhs'] - check['rhs'] if check['op'] in ('>=', '>')
-                                              else -abs(check['lhs'] - check['rhs']) if check['op'] == '=='
-                                              else abs(check['lhs'] - check['rhs']))
-                failed = [x['id'] for x in checks if not x['passed']]
+                result = assess(candidate, params, constants, derived, constraints, objectives)
+                failed = [x['id'] for x in result['constraint_checks'] if not x['passed']]
                 failures.update(failed)
-                objective_values = [expression(o['expr'], ctx) for o in objectives]
+                objective_values = result['objectives']
+                changed = sum(params[name] != baseline[name] for name in names) if compare else 0
                 row = {'candidate_id': candidate['id'], 'version': candidate['version'],
-                       **{k: ctx[k] for k in domain_names + derived_names},
+                       **params, **result['derived'],
                        **{f'objective_{i+1}': v for i, v in enumerate(objective_values)},
                        'feasible': not failed, 'failed_constraints': '|'.join(failed)}
                 writer.writerow(row)
                 item['evaluated'] += 1
                 if failed:
+                    if compare:
+                        key = (len(failed), changed)
+                        if witness_key is None or key < witness_key:
+                            witness_key = key
+                            item['infeasibility_witness'] = result
                     continue
                 item['feasible_count'] += 1
                 key = tuple(v if o['direction'] == 'min' else -v for v, o in zip(objective_values, objectives))
-                result = {'candidate_id': candidate['id'], 'version': candidate['version'],
-                          'parameters': params, 'derived': {k: ctx[k] for k in derived_names},
-                          'objectives': objective_values, 'constraint_checks': checks}
-                if best_key is None or key < best_key:
-                    best_key, item['best'], item['ties'] = key, result, 1
-                elif key == best_key:
+                candidate_key = (changed, *key) if compare else key
+                if best_key is None or candidate_key < best_key:
+                    best_key, item['best'], item['ties'] = candidate_key, result, 1
+                elif candidate_key == best_key:
                     item['ties'] += 1
+                if compare:
+                    continue
                 if global_key is None or key < global_key:
                     global_key, report['best'], report['global_ties'] = key, result, 1
                 elif key == global_key:
                     report['global_ties'] += 1
             item['violation_counts'] = dict(failures)
             item['status'] = 'feasible' if item['feasible_count'] else 'infeasible_in_declared_domain'
+            if compare and item['best']:
+                best = item['best']
+                item['infeasibility_witness'] = None
+                item['changes'] = [{'parameter': name, 'before': baseline[name], 'after': best['parameters'][name],
+                                    'domain_evidence': candidate['evidence']}
+                                   for name in names if baseline[name] != best['parameters'][name]]
+                item['derived_changes'] = [
+                    {'quantity': name, 'before': original['derived'].get(name), 'after': best['derived'][name],
+                     'evidence': entry['evidence']}
+                    for name, entry in zip(derived_names, derived)
+                    if original['derived'].get(name) != best['derived'][name]
+                ]
+                key = best_key[1:]
+                if global_key is None or key < global_key:
+                    global_key, report['best'], report['global_ties'] = key, best, item['ties']
+                elif key == global_key:
+                    report['global_ties'] += item['ties']
             report['candidates'].append(item)
     report['feasible_count'] = sum(x['feasible_count'] for x in report['candidates'])
     if report['best'] is None:
@@ -278,7 +349,7 @@ def audit_schedule(model):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['solve', 'schedule'])
+    parser.add_argument('mode', choices=['solve', 'compare', 'schedule'])
     parser.add_argument('input')
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
@@ -286,8 +357,8 @@ def main():
         with localcontext() as ctx:
             ctx.prec = 50
             model = load(args.input)
-            if args.mode == 'solve':
-                report = solve(model, args.out)
+            if args.mode in ('solve', 'compare'):
+                report = solve(model, args.out, compare=args.mode == 'compare')
             else:
                 report = audit_schedule(model)
                 write(args.out, report)
@@ -295,7 +366,7 @@ def main():
                           'out': str(args.out)}, ensure_ascii=False))
         return 0 if report['status'] in ('completed', 'valid') else 2
     except (ValueError, TypeError, KeyError, InvalidOperation, ArithmeticError, SyntaxError, OSError) as exc:
-        path = Path(args.out) / 'report.json' if args.mode == 'solve' else Path(args.out)
+        path = Path(args.out) / 'report.json' if args.mode in ('solve', 'compare') else Path(args.out)
         write(path, {'status': 'failed', 'complete_enumeration': False,
                      'error': str(exc), 'no_feasibility_conclusion': True})
         print(json.dumps({'status': 'failed', 'error': str(exc)}, ensure_ascii=False))

@@ -50,6 +50,7 @@ git clone https://github.com/ssstry2635/evidence-bounded-experiment-planner.git
 cd evidence-bounded-experiment-planner
 
 python scripts/verify_plan.py solve examples/model.json --out output/search
+python scripts/verify_plan.py compare examples/model.json --out output/comparison
 python scripts/verify_plan.py schedule examples/schedule.json --out output/schedule-audit.json
 ```
 
@@ -112,6 +113,10 @@ CLI 使用 50 位有效十进制数字。无限循环小数在该精度下舍入
 
 完整字段和规则见 [数值与排期接口](references/verification.md)。
 
+## 比较原方案与修订
+
+`compare` 会把每个原方案按 `baseline` 里的原值重新计算，再在 `domains` 中查找可行修订。单个方案优先减少改动字段数，再比较声明的目标。示例 B 的原方案是每组 5 个样本、批次时长 3 小时，计算总时长为 9 小时，超过 8 小时的上限。修订后改为每组 3 个样本，保留批次时长 3 小时，总时长降为 6 小时，采购成本为 120。报告同时保留原值、失败约束、数值余量和引用依据。A 和 C 在给定域内无可行点，报告会保留各自的失败实例。复核时可用 [交付工作表](references/plan-worksheet.md) 补齐对照、风险与确认项。
+
 ## 审核设备排期
 
 [`examples/schedule.json`](examples/schedule.json) 安排两批任务顺序使用一台容量为 1 的设备。第一批在 0–4 小时，第二批在 4–8 小时，预约窗口为 0–8 小时。
@@ -153,7 +158,7 @@ docs/                       项目概览与设计说明
 python -B -m unittest discover -s tests -v
 ```
 
-当前有 15 项回归测试，覆盖库存与整包采购边界、十进制与受限表达式、全部不可行、并列与最大化目标、重复/空参数域、搜索上限、过期报告替换、设备容量、预约缺口、依赖与截止时间。其中有限网格搜索还通过固定随机种子与独立整数算术进行交叉核验。
+当前有 17 项回归测试，覆盖原方案与最小修订的对比、原方案算术无定义时的修订、库存与整包采购边界、全部不可行、目标并列、参数域校验、设备容量、预约缺口、依赖与截止时间。有限网格搜索还通过固定随机种子与独立整数算术交叉核验。
 
 仓库提供 GitHub Actions 工作流，在 Python 3.10、3.11、3.12 和 3.13 环境运行测试与示例。贡献方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 

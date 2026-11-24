@@ -28,6 +28,33 @@ class ArithmeticTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.out = Path(self.temp.name)
 
+    def test_compare_recalculates_baselines_and_prefers_one_field_change(self):
+        report = v.solve(self.model, self.out, compare=True)
+        a, b, c = report['candidates']
+        self.assertEqual(a['infeasibility_witness']['constraint_checks'][0]['signed_margin'], -1)
+        self.assertFalse(b['as_written']['feasible'])
+        self.assertEqual(b['as_written']['derived']['duration'], 9)
+        self.assertEqual(b['best']['parameters'], {'n': 3, 'dwell': 3})
+        self.assertEqual(b['changes'], [
+            {'parameter': 'n', 'before': 5, 'after': 3, 'domain_evidence': ['example']}
+        ])
+        self.assertEqual(b['best']['derived']['cost'], 120)
+        self.assertEqual(b['best']['constraint_checks'][2]['unit'], 'hours')
+        self.assertEqual(c['as_written']['derived']['duration'], 16)
+        self.assertEqual(c['status'], 'infeasible_in_declared_domain')
+
+    def test_compare_revises_out_of_domain_baseline_with_undefined_arithmetic(self):
+        self.model['candidates'] = [self.model['candidates'][1]]
+        self.model['candidates'][0]['baseline']['n'] = 0
+        self.model['derived'].append({'name': 'ratio', 'expr': '1/n', 'evidence': ['example']})
+        report = v.solve(self.model, self.out, compare=True)
+        candidate = report['candidates'][0]
+        self.assertEqual(candidate['as_written']['outside_allowed_domains'], ['n'])
+        self.assertEqual(candidate['as_written']['evaluation_error'], 'DivisionByZero')
+        self.assertFalse(candidate['as_written']['feasible'])
+        self.assertEqual(candidate['best']['parameters']['n'], 3)
+        self.assertIsNone(next(c for c in candidate['derived_changes'] if c['quantity'] == 'ratio')['before'])
+
     def test_example_counts_optimum_and_independent_accounting(self):
         r = v.solve(self.model, self.out)
         self.assertEqual(r['evaluated'], 8)
